@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# YOLO
+runs/
+*.pt
+*.pth
+*.weights
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+tested_results/
+*.jpg
+*.jpeg
+*.png
+*.txt
+!requirements.txt
+
+# Dataset folders
+bdd_images/
+bdd_labels/
+bdd_labels_yolo/
+tested_results/
+runs/
