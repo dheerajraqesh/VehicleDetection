@@ -20,25 +20,26 @@ def log_gpu_memory():
 
 if __name__ == '__main__':
     log_system_info()
-    model = YOLO("yolo11n.pt")
+    model = YOLO("yolo11m.pt")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.model.to(device)
     print("Starting training...")
     log_gpu_memory()
     model.train(
-        data="E:/Vehicle Occlusion/data.yaml",
+        data="E:/Vehicle Occlusion/data_yolo.yaml",
         epochs=100,
-        batch=16,
-        imgsz=640,
+        batch=32,
+        imgsz=1280,
         device=0,
         optimizer="AdamW",
-        lr0=0.0001,
+        lr0=0.00001,
         weight_decay=0.001,
-        mosaic=0.3,
+        mosaic=0.5,
         mixup=0.0,
         auto_augment="randaugment",
         amp=True,
         cache=False,
+        patience=10,
         cos_lr=True,
         warmup_epochs=10,
         overlap_mask=True,

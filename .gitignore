@@ -20,7 +20,6 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
 # YOLO
 runs/
 *.pt
@@ -30,7 +29,7 @@ runs/
 # IDE
 .vscode/
 .idea/
-
+.venv/
 # OS
 .DS_Store
 Thumbs.db
@@ -38,7 +37,7 @@ Thumbs.db
 # Project specific
 tested_results/
 *.jpg
-*.jpeg
+*.jpegl
 *.png
 *.txt
 !requirements.txt
@@ -46,6 +45,14 @@ tested_results/
 # Dataset folders
 bdd_images/
 bdd_labels/
-bdd_labels_yolo/
-tested_results/
 runs/
+output_frames/
+Videos/
+yolo_json_output/
+yolo_img_input/
+yolo_img_output/
+seg_json_output/
+solo*/
+midas_json_output/
+midas_img_output/
+seg_img_output/
