@@ -31,7 +31,7 @@ def compute_masked_depth(depth_map, mask):
 def create_depth_visualization(img, objects_with_depth, image_name):
     """Create visualization of objects colored by depth with text labels"""
     # Create output directories
-    vis_dir = "midas_img_output"
+    vis_dir = "outputs/midas/img"
     os.makedirs(vis_dir, exist_ok=True)
     
     # Create a copy of the original image
@@ -174,12 +174,12 @@ def process_image(image_path, json_path):
     print(f"Using device: {device}")
 
     # Output directory
-    midas_json_dir = "midas_json_output"
+    midas_json_dir = "outputs/midas/json"
     os.makedirs(midas_json_dir, exist_ok=True)
 
     # Load pre-trained MiDaS model
     print("Loading MiDaS model...")
-    processor = AutoImageProcessor.from_pretrained("Intel/dpt-large")
+    processor = AutoImageProcessor.from_pretrained("Intel/dpt-large", use_fast=True)
     model = AutoModelForDepthEstimation.from_pretrained("Intel/dpt-large")
     model.to(device)
     model.eval()

@@ -8,8 +8,8 @@ import numpy as np
 
 # --- CONFIG ---
 base_path = r"E:\Vehicle Occlusion"
-colored_dir = os.path.join(base_path, "seg_img_output")
-json_dir = os.path.join(base_path, "seg_json_output")
+colored_dir = os.path.join(base_path, "outputs/seg/img")
+json_dir = os.path.join(base_path, "outputs/seg/json")
 os.makedirs(colored_dir, exist_ok=True)
 os.makedirs(json_dir, exist_ok=True)
 
@@ -145,12 +145,12 @@ def process_image(json_path, img_path):
     cv2.imwrite(colored_path, colored_mask)
 
     # Save JSON with polygons
-    output_json_path = os.path.join(json_dir, f"{image_name}.json")
-    with open(output_json_path, 'w') as f:
+    json_path = os.path.join(json_dir, f"{image_name}.json")
+    with open(json_path, 'w') as f:
         json.dump(output_data, f, indent=4)
 
     print(f"Saved colored mask to {colored_path}")
-    print(f"Saved polygon JSON to {output_json_path}")
+    print(f"Saved polygon JSON to {json_path}")
 
 if __name__ == "__main__":
     import argparse

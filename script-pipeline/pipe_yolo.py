@@ -13,12 +13,6 @@ DEFAULT_ATTRIBUTES = {
     "trafficLightColor": "none"
 }
 
-# Create output directories
-OUTPUT_JSON_DIR = "solo_yolo_json"
-OUTPUT_IMG_DIR = "solo_yolo_img"
-os.makedirs(OUTPUT_JSON_DIR, exist_ok=True)
-os.makedirs(OUTPUT_IMG_DIR, exist_ok=True)
-
 def draw_minimal_bbox(img, x1, y1, x2, y2, class_name, color=(0, 255, 0)):
     """Draw a minimal bounding box with class name"""
     # Convert coordinates to integers
@@ -43,25 +37,33 @@ def draw_minimal_bbox(img, x1, y1, x2, y2, class_name, color=(0, 255, 0)):
     
     return img
 
-def process_image(image_path):
-    """Process a single image with YOLO and generate visualization + JSON"""
-    print(f"\nProcessing image: {image_path}")
+def generate_json_for_image(image_path):
+    # Create output directories
+    output_dir = "outputs/yolo/json"
+    img_input_dir = "img_input"
+    img_output_dir = "outputs/yolo/img"
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(img_input_dir, exist_ok=True)
+    os.makedirs(img_output_dir, exist_ok=True)
     
     # Load YOLO model
-    print("Loading YOLO model...")
     model = YOLO('runs/detect/train2/weights/best.pt')
     
-    # Load and check image
+    # Copy image to img_input
+    import shutil
+    try:
+        shutil.copy2(image_path, img_input_dir)
+    except Exception as e:
+        print(f"Failed to copy {image_path} to {img_input_dir}: {e}")
+    
+    # Get image name and load image
+    image_name = os.path.splitext(os.path.basename(image_path))[0]
     img = cv2.imread(image_path)
     if img is None:
         print(f"Failed to load image: {image_path}")
         return
     
-    # Get image name
-    image_name = os.path.splitext(os.path.basename(image_path))[0]
-    
     # Run YOLO detection
-    print("Running detection...")
     results = model(image_path)
     result = results[0]
     
@@ -70,10 +72,7 @@ def process_image(image_path):
     for idx, box in enumerate(result.boxes):
         class_id = int(box.cls[0])
         class_name = result.names[class_id]
-        confidence = float(box.conf[0])
         x1, y1, x2, y2 = map(float, box.xyxy[0])
-        
-        print(f"Detected {class_name} with confidence: {confidence:.2f}")
         
         # Draw bbox on image
         img = draw_minimal_bbox(img, x1, y1, x2, y2, class_name)
@@ -93,7 +92,7 @@ def process_image(image_path):
         objects.append(obj)
     
     # Save annotated image
-    img_output_path = os.path.join(OUTPUT_IMG_DIR, f"{image_name}.jpg")
+    img_output_path = os.path.join(img_output_dir, f"{image_name}.jpg")
     cv2.imwrite(img_output_path, img)
     print(f"Saved annotated image: {img_output_path}")
     
@@ -113,33 +112,34 @@ def process_image(image_path):
         }
     }
     
-    json_output_path = os.path.join(OUTPUT_JSON_DIR, f"{image_name}.json")
+    json_output_path = os.path.join(output_dir, f"{image_name}.json")
     with open(json_output_path, "w") as f:
         json.dump(json_data, f, indent=4)
     print(f"Saved JSON: {json_output_path}")
 
-def main():
-    # Create and hide root window
-    root = tk.Tk()
-    root.withdraw()
-    
-    # Open file dialog
-    image_path = filedialog.askopenfilename(
-        title="Select image to process",
-        filetypes=[
-            ("Image files", "*.jpg *.jpeg *.png"),
-            ("All files", "*.*")
-        ],
-        initialdir="E:/Vehicle Occlusion/bdd_images/test"
-    )
-    
-    if not image_path:
-        print("No image selected. Exiting...")
-        return
-    
-    # Process the selected image
-    process_image(image_path)
-    print("\nProcessing complete!")
-
 if __name__ == "__main__":
-    main() 
+    import sys
+    if len(sys.argv) > 1:
+        # Run for a single image passed as argument (pipeline mode)
+        generate_json_for_image(sys.argv[1])
+    else:
+        # Fallback to browse and select images via dialog (manual mode)
+        import tkinter as tk
+        from tkinter import filedialog
+        def browse_and_generate_json():
+            root = tk.Tk()
+            root.withdraw()
+            image_paths = filedialog.askopenfilenames(
+                title="Select image(s) to run YOLO and generate JSON",
+                filetypes=[
+                    ("Image files", "*.jpg *.jpeg *.png"),
+                    ("All files", "*.*")
+                ],
+                initialdir="E:/Vehicle Occlusion/bdd_images/test"
+            )
+            if not image_paths:
+                print("No images selected. Exiting...")
+                return
+            for image_path in image_paths:
+                generate_json_for_image(image_path)
+        browse_and_generate_json()

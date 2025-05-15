@@ -9,8 +9,8 @@ from transformers import Mask2FormerImageProcessor, Mask2FormerForUniversalSegme
 import json
 
 # Configuration
-OUTPUT_MASK_DIR = "solo_seg_img"
-OUTPUT_JSON_DIR = "solo_seg_json"
+OUTPUT_MASK_DIR = "solo/seg/img"
+OUTPUT_JSON_DIR = "solo/seg/json"
 os.makedirs(OUTPUT_MASK_DIR, exist_ok=True)
 os.makedirs(OUTPUT_JSON_DIR, exist_ok=True)
 
