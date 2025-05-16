@@ -6,22 +6,17 @@ import os
 from tkinter import Tk, filedialog
 
 def process_video(video_path, model_path, output_dir='output_frames', frame_skip=2):
-    # Get video filename without extension
     video_name = os.path.splitext(os.path.basename(video_path))[0]
-    # Create video-specific output directory
     video_output_dir = os.path.join(output_dir, video_name)
     os.makedirs(video_output_dir, exist_ok=True)
     
-    # Load the YOLO model
     model = YOLO(model_path)
     
-    # Open the video file
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("Error: Could not open video file")
         return
     
-    # Get video properties
     fps = cap.get(cv2.CAP_PROP_FPS)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -42,22 +37,16 @@ def process_video(video_path, model_path, output_dir='output_frames', frame_skip
         if not ret:
             break
             
-        # Only process every nth frame
         if frame_count % frame_skip == 0:
-            # Perform detection
             results = model(frame)
             
-            # Get the first result (since we're processing one frame at a time)
             result = results[0]
             
-            # Draw bounding boxes and confidence scores
             annotated_frame = result.plot()
             
-            # Save the frame with detections
             output_path = os.path.join(video_output_dir, f'frame_{saved_count:04d}.jpg')
             cv2.imwrite(output_path, annotated_frame)
             
-            # Print detection information
             print(f"\nFrame {frame_count} (Saved as {saved_count}):")
             for box in result.boxes:
                 confidence = float(box.conf[0])
@@ -69,7 +58,6 @@ def process_video(video_path, model_path, output_dir='output_frames', frame_skip
         
         frame_count += 1
     
-    # Release the video capture object
     cap.release()
     print(f"\nProcessing complete.")
     print(f"Processed {frame_count} frames")
@@ -91,7 +79,6 @@ if __name__ == "__main__":
         print("No video file selected. Exiting...")
         exit()
     
-    # Ask for frame skip value
     try:
         frame_skip = int(input("Enter frame skip value (e.g., 2 for every 2nd frame, 3 for every 3rd frame): "))
         if frame_skip < 1:

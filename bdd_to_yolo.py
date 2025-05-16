@@ -2,7 +2,6 @@ import os
 import json
 import torch
 from torchvision.io import read_image
-from tqdm import tqdm
 import multiprocessing as mp
 from functools import partial
 

@@ -13,7 +13,6 @@ json_dir = os.path.join(base_path, "outputs/seg/json")
 os.makedirs(colored_dir, exist_ok=True)
 os.makedirs(json_dir, exist_ok=True)
 
-# Define your YOLO/COCO classes and colors
 class_names = [
     "person", "bike", "car", "motor", "bus", "train", "truck", "traffic light", "traffic sign", "rider"
 ]
@@ -36,27 +35,22 @@ def mask_to_polygon(mask):
     if not contours:
         return None
     
-    # Get the largest contour
     largest_contour = max(contours, key=cv2.contourArea)
     
-    # Simplify the polygon
     epsilon = 0.005 * cv2.arcLength(largest_contour, True)
     approx = cv2.approxPolyDP(largest_contour, epsilon, True)
     
-    # Convert to BDD format
     polygon = []
     for point in approx:
         x, y = point[0]
         polygon.append([float(x), float(y), "L"])
     
-    # Close the polygon
     if polygon:
         polygon.append([float(polygon[0][0]), float(polygon[0][1]), "L"])
     
     return polygon
 
 def process_image(json_path, img_path):
-    # Load YOLO JSON
     with open(json_path, "r") as f:
         data = json.load(f)
     img = cv2.imread(img_path)
@@ -66,7 +60,6 @@ def process_image(json_path, img_path):
     objects = data["frames"][0]["objects"]
     image_name = data["name"]
 
-    # Initialize output data structure
     output_data = {
         "name": image_name,
         "frames": [{
@@ -86,10 +79,8 @@ def process_image(json_path, img_path):
     model = Mask2FormerForUniversalSegmentation.from_pretrained("facebook/mask2former-swin-large-coco-instance").to(device)
     model.eval()
 
-    # Create colored mask for visualization
     colored_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
 
-    # Process each object
     for obj_id, obj in enumerate(objects):
         category = obj["category"]
         if category not in class_names:
@@ -108,7 +99,6 @@ def process_image(json_path, img_path):
             segmentation = results["segmentation"].cpu().numpy()
             segments_info = results["segments_info"]
 
-            # Take the largest mask (by area) as the object
             best_mask = None
             best_area = 0
             for seg in segments_info:
@@ -119,19 +109,15 @@ def process_image(json_path, img_path):
                     best_mask = mask
 
             if best_mask is not None:
-                # Create full-size mask
                 mask_resized = cv2.resize(best_mask, (x2 - x1, y2 - y1), interpolation=cv2.INTER_NEAREST)
                 full_mask = np.zeros((img_height, img_width), dtype=np.uint8)
                 full_mask[y1:y2, x1:x2][mask_resized > 0] = 1
 
-                # Convert mask to polygon
                 polygon = mask_to_polygon(full_mask)
                 if polygon:
-                    # Add to colored visualization
                     color = class_colors.get(category, (255, 255, 255))
                     colored_mask[full_mask > 0] = color
 
-                    # Add to output JSON
                     obj_data = {
                         "category": category,
                         "id": obj_id,
@@ -140,11 +126,9 @@ def process_image(json_path, img_path):
                     }
                     output_data["frames"][0]["objects"].append(obj_data)
 
-    # Save colored mask
     colored_path = os.path.join(colored_dir, f"{image_name}.png")
     cv2.imwrite(colored_path, colored_mask)
 
-    # Save JSON with polygons
     json_path = os.path.join(json_dir, f"{image_name}.json")
     with open(json_path, 'w') as f:
         json.dump(output_data, f, indent=4)

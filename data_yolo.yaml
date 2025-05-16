@@ -1,6 +1,6 @@
 path: E:/Vehicle Occlusion/bdd_images
-train: train_500
-val: val_200
+train: train
+val: val
 test: test
-nc: 10
-names: ['bike', 'bus', 'car', 'motor', 'person', 'rider', 'traffic light', 'traffic sign', 'train', 'truck']
+nc: 11
+names: ['background', 'bike', 'bus', 'car', 'motor', 'person', 'rider', 'traffic light', 'traffic sign', 'train', 'truck']

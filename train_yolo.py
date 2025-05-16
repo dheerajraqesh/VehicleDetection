@@ -1,7 +1,6 @@
 import torch
 from ultralytics import YOLO
 import psutil
-import time
 
 def log_system_info():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -20,36 +19,35 @@ def log_gpu_memory():
 
 if __name__ == '__main__':
     log_system_info()
-    model = YOLO("yolo11m.pt")
+    model = YOLO("yolo11l.pt")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.model.to(device)
     print("Starting training...")
     log_gpu_memory()
     model.train(
         data="E:/Vehicle Occlusion/data_yolo.yaml",
-        epochs=100,
+        epochs=20,
         batch=32,
-        imgsz=1280,
+        imgsz=640,
         device=0,
         optimizer="AdamW",
         lr0=0.00001,
         weight_decay=0.001,
-        mosaic=0.5,
+        mosaic=0.3,
         mixup=0.0,
         auto_augment="randaugment",
         amp=True,
         cache=False,
-        patience=10,
         cos_lr=True,
-        warmup_epochs=10,
+        warmup_epochs=2,
         overlap_mask=True,
         multi_scale=False,
         verbose=True,
-        save_period=10,
+        save_period=5,
         conf=0.25,
         iou=0.45,
         rect=True,
-        close_mosaic=10
+        close_mosaic=2
     )
     log_gpu_memory()
     print("Training complete!")

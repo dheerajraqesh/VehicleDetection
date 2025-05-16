@@ -7,8 +7,8 @@ import tkinter as tk
 from tkinter import filedialog
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
 
-# Configuration
 OUTPUT_JSON_DIR = "solo/midas/json"
 OUTPUT_IMG_DIR = "solo/midas/img"
 os.makedirs(OUTPUT_JSON_DIR, exist_ok=True)
@@ -24,45 +24,92 @@ def generate_grid_points(width, height, grid_size):
         for x in x_points:
             points.append([float(x), float(y), "L"])
     
-    # Close the polygon by repeating first point
     if points:
         points.append([float(points[0][0]), float(points[0][1]), "L"])
     
     return points
 
+def add_depth_colorbar(img, min_depth, max_depth, cmap_name='viridis'):
+    """Add a depth colorbar to the right side of the image"""
+    h, w = img.shape[:2]
+    
+    bar_width = 30
+    padding = 10
+    
+    expanded_img = np.zeros((h, w + bar_width + padding * 2, 3), dtype=np.uint8)
+    expanded_img[:, :w] = img
+    
+    depth_range = np.linspace(min_depth, max_depth, h)[:, np.newaxis]
+    
+    cmap = plt.get_cmap(cmap_name)
+    norm = Normalize(vmin=min_depth, vmax=max_depth)
+    
+    colors = cmap(norm(depth_range))[:, 0, :3]
+    
+    colors_rgb = (colors * 255).astype(np.uint8)
+    
+    for i in range(h):
+        expanded_img[i, w + padding:w + padding + bar_width] = colors_rgb[i]
+    
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.4
+    tick_count = 6
+    for i in range(tick_count):
+        y_pos = int((h - 1) * i / (tick_count - 1))
+        depth_val = max_depth - (max_depth - min_depth) * i / (tick_count - 1)
+        
+        expanded_img[y_pos, w + padding + bar_width:w + padding + bar_width + 5] = [255, 255, 255]
+        
+        text = f"{depth_val:.1f}"
+        text_size, _ = cv2.getTextSize(text, font, font_scale, 1)
+        cv2.putText(
+            expanded_img, 
+            text, 
+            (w + padding + bar_width + 8, y_pos + text_size[1]//2), 
+            font, 
+            font_scale, 
+            (255, 255, 255), 
+            1
+        )
+    
+    cv2.putText(
+        expanded_img,
+        "Depth",
+        (w + padding, 20),
+        font,
+        0.6,
+        (255, 255, 255),
+        1
+    )
+    
+    return expanded_img
+
 def process_image(image_path):
     """Process a single image with MiDaS depth estimation"""
     print("\nInitializing MiDaS model...")
     
-    # Setup
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Load pre-trained MiDaS model
     print("Loading MiDaS model...")
-    processor = AutoImageProcessor.from_pretrained("Intel/dpt-large", use_fast=True)
+    processor = AutoImageProcessor.from_pretrained("Intel/dpt-large")
     model = AutoModelForDepthEstimation.from_pretrained("Intel/dpt-large")
     model.to(device)
     model.eval()
 
-    # Load and check image
     img = cv2.imread(image_path)
     if img is None:
         print(f"Failed to load image: {image_path}")
         return
 
-    # Get image name
     image_name = os.path.splitext(os.path.basename(image_path))[0]
     
-    # Prepare image for model
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_height, img_width = img.shape[:2]
 
-    # Run depth estimation
     print("Running depth estimation...")
     inputs = processor(images=img_rgb, return_tensors="pt").to(device)
 
-    # Inference
     with torch.no_grad():
         outputs = model(**inputs)
         predicted_depth = outputs.predicted_depth
@@ -74,46 +121,39 @@ def process_image(image_path):
         ).squeeze()
         depth_map = prediction.cpu().numpy()
 
-    # Create visualization
-    # Normalize depth map for visualization
-    depth_norm = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min())
-    
-    # Create colored depth visualization
-    colored_depth = plt.cm.viridis(depth_norm)[:, :, :3]  # Remove alpha channel
-    colored_depth = (colored_depth * 255).astype(np.uint8)
-    
-    # Add text with depth information
     min_depth = depth_map.min()
     max_depth = depth_map.max()
     avg_depth = depth_map.mean()
     
-    # Add depth info text to the visualization
+    norm = Normalize(vmin=min_depth, vmax=max_depth)
+    depth_norm = norm(depth_map)
+    
+    cmap = plt.get_cmap('viridis')
+    colored_depth = cmap(depth_norm)[:, :, :3] 
+    colored_depth = (colored_depth * 255).astype(np.uint8)
+    
     info_img = colored_depth.copy()
     font = cv2.FONT_HERSHEY_SIMPLEX
     cv2.putText(info_img, f"Min depth: {min_depth:.2f}", (20, 30), font, 0.7, (255, 255, 255), 2)
     cv2.putText(info_img, f"Max depth: {max_depth:.2f}", (20, 60), font, 0.7, (255, 255, 255), 2)
     cv2.putText(info_img, f"Avg depth: {avg_depth:.2f}", (20, 90), font, 0.7, (255, 255, 255), 2)
     
-    # Save depth visualization
+    info_img_with_bar = add_depth_colorbar(info_img, min_depth, max_depth)
+    
     vis_path = os.path.join(OUTPUT_IMG_DIR, f"{image_name}.png")
-    cv2.imwrite(vis_path, cv2.cvtColor(info_img, cv2.COLOR_RGB2BGR))
+    cv2.imwrite(vis_path, cv2.cvtColor(info_img_with_bar, cv2.COLOR_RGB2BGR))
     print(f"Saved depth visualization to: {vis_path}")
     
-    # Create simple blend with original image
     alpha = 0.7
     blend = cv2.addWeighted(img, 1-alpha, cv2.cvtColor(colored_depth, cv2.COLOR_RGB2BGR), alpha, 0)
     blend_path = os.path.join(OUTPUT_IMG_DIR, f"{image_name}_blend.png")
     cv2.imwrite(blend_path, blend)
     print(f"Saved blended visualization to: {blend_path}")
     
-    # Create BDD100K-style JSON structure with depth information
-    # Divide the image into a grid for depth samples
-    grid_size = 4  # 4x4 grid = 16 regions
+    grid_size = 4 
     
-    # Initialize objects list
     objects = []
     
-    # Add depth information for the entire image
     objects.append({
         "category": "depth_full_image",
         "id": 0,
@@ -124,8 +164,6 @@ def process_image(image_path):
         }
     })
     
-    # Create a grid of areas with average depth
-    # Each entry will be a region with a polygon outline and average depth
     grid_x = np.linspace(0, img_width, grid_size + 1, dtype=int)
     grid_y = np.linspace(0, img_height, grid_size + 1, dtype=int)
     
@@ -135,19 +173,16 @@ def process_image(image_path):
             x1, x2 = grid_x[j], grid_x[j+1]
             y1, y2 = grid_y[i], grid_y[i+1]
             
-            # Create polygon for this grid cell
             poly = [
                 [float(x1), float(y1), "L"],
                 [float(x2), float(y1), "L"],
                 [float(x2), float(y2), "L"],
                 [float(x1), float(y2), "L"],
-                [float(x1), float(y1), "L"],  # Close the polygon
+                [float(x1), float(y1), "L"],
             ]
             
-            # Calculate average depth for this region
             region_depth = depth_map[y1:y2, x1:x2].mean()
             
-            # Add this region as an object
             objects.append({
                 "category": "depth_region",
                 "id": obj_id,
@@ -159,7 +194,6 @@ def process_image(image_path):
             })
             obj_id += 1
     
-    # Create final JSON structure
     json_data = {
         "name": image_name,
         "frames": [
@@ -180,14 +214,12 @@ def process_image(image_path):
         }
     }
     
-    # Save JSON
     json_path = os.path.join(OUTPUT_JSON_DIR, f"{image_name}.json")
     with open(json_path, 'w') as f:
         json.dump(json_data, f, indent=4)
     print(f"Saved depth json to: {json_path}")
 
 def main():
-    # Create file dialog
     root = tk.Tk()
     root.withdraw()
     
@@ -203,7 +235,6 @@ def main():
         print("No image selected. Exiting...")
         return
     
-    # Process the image
     process_image(image_path)
     print("\nDepth estimation complete!")
 
