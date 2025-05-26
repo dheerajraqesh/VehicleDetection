@@ -55,3 +55,6 @@ img_input/
 seg_json_output/
 solo/
 outputs/
+outputs_vid/
+vid_input/
+temp/

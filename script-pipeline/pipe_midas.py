@@ -32,7 +32,6 @@ def create_depth_visualization(img, objects_with_depth, image_name):
     """Create visualization of objects colored by depth with text labels"""
     vis_dir = "outputs/midas/img"
     os.makedirs(vis_dir, exist_ok=True)
-    vis_img = img.copy()
     h, w = img.shape[:2]
     
     vis_mask = np.zeros((h, w, 3), dtype=np.uint8)
@@ -41,9 +40,10 @@ def create_depth_visualization(img, objects_with_depth, image_name):
     if not depths:
         return
     
-    min_depth = min(depths)
-    max_depth = max(depths)
-    depth_range = max_depth - min_depth if max_depth > min_depth else 1.0
+    # Convert depths to inverse scale for color mapping (100/depth)
+    inverse_depths = [100/d for d in depths]
+    min_depth = min(inverse_depths)
+    max_depth = max(inverse_depths)
     
     cmap = plt.get_cmap('viridis')
     norm = Normalize(vmin=min_depth, vmax=max_depth)
@@ -54,7 +54,7 @@ def create_depth_visualization(img, objects_with_depth, image_name):
         if 'depth' not in obj:
             continue
             
-        depth = obj['depth']
+        depth = 100/obj['depth']  # Convert to inverse scale for coloring
         category = obj.get('category', 'unknown')
         
         if category == 'background':
