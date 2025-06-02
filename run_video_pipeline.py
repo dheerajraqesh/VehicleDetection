@@ -8,22 +8,17 @@ import argparse
 import tkinter as tk
 from tkinter import filedialog
 
-# --- CONFIG ---
 VID_INPUT_DIR = "Videos"
 OUTPUTS_VID_DIR = "outputs_vid"
 TEMP_DIR = "temp"
 
-# Create all required directories
 os.makedirs(VID_INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUTS_VID_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# Create model-specific output directories
 for model in ['yolo', 'seg', 'midas', 'deepsort']:
     os.makedirs(os.path.join(OUTPUTS_VID_DIR, model, 'vid'), exist_ok=True)
     os.makedirs(os.path.join(OUTPUTS_VID_DIR, model, 'json'), exist_ok=True)
-
-# --- HELPER FUNCTIONS ---
 
 def copy_model_json_to_output(model, src_dir, dst_dir, vidname):
     """Copy only the main output JSON of the model from src_dir to dst_dir, renaming it to vidname.json."""
@@ -133,12 +128,9 @@ def process_video(video_path):
     os.makedirs(input_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Get video FPS
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     cap.release()
-
-    # Define output paths for each model
     output_paths = {
         'yolo': {
             'video': os.path.join(OUTPUTS_VID_DIR, 'yolo', 'vid', f"{video_name}.mp4"),
@@ -162,7 +154,6 @@ def process_video(video_path):
     if not extract_frames(video_path, input_dir):
         return False
 
-    # Helper to clear output_dir
     def clear_output_dir():
         for f in os.listdir(output_dir):
             fp = os.path.join(output_dir, f)
@@ -209,11 +200,9 @@ def process_video(video_path):
     print("\n========= Starting DeepSORT Tracking ==========\n")
     if not run_model_script("script-video-pipeline/video_pipe_deepsort.py", input_dir, output_dir, midas_json):
         return False
-    # Reconstruct DeepSORT video from per-frame images
     if not reconstruct_video(output_dir, output_paths['deepsort']['video'], fps):
         return False
     copy_model_json_to_output('deepsort', output_dir, os.path.join(OUTPUTS_VID_DIR, 'deepsort', 'json'), video_name)
-    # Copy prediction frame and json to deepsort output folders
     last_img_src = os.path.join(output_dir, "last_frame.jpg")
     last_img_dst = os.path.join(os.path.dirname(output_paths['deepsort']['video']), f"{video_name}_last.jpg")
     if os.path.exists(last_img_src):
@@ -222,18 +211,22 @@ def process_video(video_path):
     last_json_dst = os.path.join(os.path.dirname(output_paths['deepsort']['json']), f"{video_name}_last.json")
     if os.path.exists(last_json_src):
         shutil.copy2(last_json_src, last_json_dst)
-    pred_img_src = os.path.join(output_dir, "frame_pred.jpg")
-    pred_img_dst = os.path.join(os.path.dirname(output_paths['deepsort']['video']), f"{video_name}_pred.jpg")
+    pred_img_src = os.path.join(output_dir, "deepsort_preds.mp4")
+    pred_img_dst = os.path.join(os.path.dirname(output_paths['deepsort']['video']), f"{video_name}_preds.mp4")
     if os.path.exists(pred_img_src):
         shutil.copy2(pred_img_src, pred_img_dst)
-    pred_json_src = os.path.join(output_dir, "frame_pred.json")
-    pred_json_dst = os.path.join(os.path.dirname(output_paths['deepsort']['json']), f"{video_name}_pred.json")
+    pred_json_src = os.path.join(output_dir, "deepsort_preds.json")
+    pred_json_dst = os.path.join(os.path.dirname(output_paths['deepsort']['json']), f"{video_name}_preds.json")
     if os.path.exists(pred_json_src):
         shutil.copy2(pred_json_src, pred_json_dst)
+    clear_output_dir()
     print("\n========= Finished DeepSORT Tracking =========\n")
     # Step 6: Clean up temp directory
-    shutil.rmtree(temp_dir)
-    print(f"Temporary directory {temp_dir} cleared.")
+    # --- Run occlusion detection on DeepSORT output ---
+    deepsort_json = os.path.join(output_dir, "deepsort_output.json")
+    run_model_script("script-video-pipeline/occlusion_detection.py", deepsort_json)
+    t=os.path.join(temp_dir, "input")
+    shutil.rmtree(t)
     return True
 
 def main():
@@ -247,11 +240,8 @@ def main():
             return
         process_video(args.video)
     else:
-        # Create and hide the root window
         root = tk.Tk()
         root.withdraw()
-        
-        # Open file browser in the vid_input directory
         video_path = filedialog.askopenfilename(
             initialdir=VID_INPUT_DIR,
             title="Select a video file",
@@ -261,7 +251,7 @@ def main():
             ]
         )
         
-        if video_path:  # If a file was selected
+        if video_path: 
             print(f"\nProcessing video: {video_path}")
             process_video(video_path)
         else:

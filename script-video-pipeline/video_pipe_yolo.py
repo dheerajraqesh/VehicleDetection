@@ -68,15 +68,13 @@ def process_frames(input_dir, output_dir, fps=30):
             objects.append(obj)
         out_frame_path = os.path.join(output_dir, frame_file)
         cv2.imwrite(out_frame_path, img)
-        # Calculate timestamp based on frame number and FPS
-        timestamp = int((frame_idx / fps) * 1000)  # Convert to milliseconds
+        timestamp = int((frame_idx / fps) * 1000)  
         frame_data = {
             "timestamp": timestamp,
             "objects": objects
         }
         aggregated_data["frames"].append(frame_data)
 
-    # Save YOLO JSON in temp/output directly
     temp_json_path = os.path.join(output_dir, 'yolo_output.json')
     with open(temp_json_path, "w") as f:
         json.dump(aggregated_data, f, indent=4)

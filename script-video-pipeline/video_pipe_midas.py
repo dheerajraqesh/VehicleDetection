@@ -51,7 +51,6 @@ def process_frames(input_dir, output_dir, seg_json_path):
     model = AutoModelForDepthEstimation.from_pretrained("Intel/dpt-large").to(device)
     model.eval()
 
-    # Load segmentation JSON
     with open(seg_json_path, 'r') as f:
         seg_data = json.load(f)
 
@@ -81,7 +80,6 @@ def process_frames(input_dir, output_dir, seg_json_path):
         img_pil = Image.fromarray(img_rgb)
         img_height, img_width = img.shape[:2]
 
-        # Get depth map for the whole frame
         with torch.no_grad():
             inputs = processor(images=img_pil, return_tensors="pt").to(device)
             outputs = model(**inputs)
@@ -93,14 +91,11 @@ def process_frames(input_dir, output_dir, seg_json_path):
                 align_corners=False,
             ).squeeze().cpu().numpy()
 
-        # Get segmented objects for this frame
         seg_objects = seg_data["frames"][frame_idx]["objects"]
         objects = []
 
-        # Create visualization
         vis_mask = np.zeros((img_height, img_width, 3), dtype=np.uint8)
         
-        # Get all depths for color mapping
         depths = []
         for seg_obj in seg_objects:
             polygon = seg_obj["poly2d"]
@@ -110,7 +105,6 @@ def process_frames(input_dir, output_dir, seg_json_path):
                 depths.append(depth_stats["mean"])
 
         if depths:
-            # Convert depths to inverse scale for color mapping (100/depth)
             inverse_depths = [100/d for d in depths]
             min_depth = min(inverse_depths)
             max_depth = max(inverse_depths)
@@ -119,23 +113,18 @@ def process_frames(input_dir, output_dir, seg_json_path):
             norm = Normalize(vmin=min_depth, vmax=max_depth)
             
             for seg_obj in seg_objects:
-                # Get polygon and create mask
                 polygon = seg_obj["poly2d"]
                 mask = create_mask_from_polygon(polygon, img.shape)
                 
-                # Compute depth statistics for this object
                 depth_stats = compute_masked_depth(depth_map, mask)
                 
                 if depth_stats:
-                    # Calculate color based on depth
-                    depth = 100/depth_stats["mean"]  # Convert to inverse scale for coloring
+                    depth = 100/depth_stats["mean"]  
                     color = cmap(norm(depth))[:3]
-                    color = tuple(min(255, int(c * 255 * 1.5)) for c in color)  # Make color lighter
+                    color = tuple(min(255, int(c * 255 * 1.5)) for c in color)  
                     
-                    # Add to visualization
                     vis_mask[mask > 0] = color
                     
-                    # Calculate center point for caption
                     points = np.array([[int(p[0]), int(p[1])] for p in polygon if p[2] == "L"], dtype=np.int32)
                     if len(points) > 0:
                         M = cv2.moments(points)
@@ -143,25 +132,21 @@ def process_frames(input_dir, output_dir, seg_json_path):
                             center_x = int(M["m10"] / M["m00"])
                             center_y = int(M["m01"] / M["m00"])
                             
-                            # Add caption
                             text = f"{seg_obj['category']}: {depth_stats['mean']:.2f}"
                             font = cv2.FONT_HERSHEY_SIMPLEX
                             font_scale = 0.6
                             thickness = 2
                             (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
                             
-                            # Draw background rectangle for text
                             cv2.rectangle(vis_mask, 
                                         (center_x - text_width//2 - 5, center_y - text_height - 5),
                                         (center_x + text_width//2 + 5, center_y + 5),
                                         (0, 0, 0), -1)
                             
-                            # Draw text
                             cv2.putText(vis_mask, text,
                                       (center_x - text_width//2, center_y),
                                       font, font_scale, (255, 255, 255), thickness)
                     
-                    # Create object with both segmentation and depth info
                     obj = {
                         "category": seg_obj["category"],
                         "id": seg_obj["id"],
@@ -172,13 +157,10 @@ def process_frames(input_dir, output_dir, seg_json_path):
                     }
                     objects.append(obj)
 
-            # Blend visualization with original image
             alpha = 0.6
             blended = cv2.addWeighted(img, 1 - alpha, vis_mask, alpha, 0)
         else:
             blended = img.copy()
-
-        # Save visualization
         out_frame_path = os.path.join(output_dir, frame_file)
         cv2.imwrite(out_frame_path, blended)
 
@@ -188,7 +170,6 @@ def process_frames(input_dir, output_dir, seg_json_path):
         }
         aggregated_data["frames"].append(frame_data)
 
-    # Save MIDAS JSON in output_dir directly
     temp_json_path = os.path.join(output_dir, 'midas_output.json')
     with open(temp_json_path, "w") as f:
         json.dump(aggregated_data, f, indent=4)

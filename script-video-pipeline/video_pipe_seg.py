@@ -46,8 +46,6 @@ def process_frames(input_dir, output_dir, yolo_json_path):
     processor = Mask2FormerImageProcessor.from_pretrained("facebook/mask2former-swin-large-coco-instance")
     model = Mask2FormerForUniversalSegmentation.from_pretrained("facebook/mask2former-swin-large-coco-instance").to(device)
     model.eval()
-
-    # Load YOLO JSON
     with open(yolo_json_path, 'r') as f:
         yolo_data = json.load(f)
 
@@ -66,7 +64,6 @@ def process_frames(input_dir, output_dir, yolo_json_path):
         }
     }
 
-    # Process each frame
     for frame_idx, frame_file in enumerate(frame_files):
         frame_path = os.path.join(input_dir, frame_file)
         img = cv2.imread(frame_path)
@@ -78,25 +75,20 @@ def process_frames(input_dir, output_dir, yolo_json_path):
         img_pil = Image.fromarray(img_rgb)
         img_height, img_width = img.shape[:2]
 
-        # Get YOLO detections for this frame
         yolo_objects = yolo_data["frames"][frame_idx]["objects"]
         objects = []
 
-        # Process each object in the frame
         for obj_id, yolo_obj in enumerate(yolo_objects):
             category = yolo_obj["category"]
             if category not in class_names:
                 continue
 
-            # Get bbox coordinates
             bbox = yolo_obj["box2d"]
             x1, y1, x2, y2 = map(int, [bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]])
             
-            # Crop image to bbox
             roi = img_pil.crop((x1, y1, x2, y2))
             roi_width, roi_height = roi.size
 
-            # Run segmentation on cropped region
             with torch.no_grad():
                 inputs = processor(images=roi, return_tensors="pt").to(device)
                 outputs = model(**inputs)
@@ -105,7 +97,6 @@ def process_frames(input_dir, output_dir, yolo_json_path):
                 segmentation = results["segmentation"].cpu().numpy()
                 segments_info = results["segments_info"]
 
-                # Find best mask (largest area)
                 best_mask = None
                 best_area = 0
                 for seg in segments_info:
@@ -116,47 +107,33 @@ def process_frames(input_dir, output_dir, yolo_json_path):
                         best_mask = mask
 
                 if best_mask is not None:
-                    # Resize mask to original bbox size
                     mask_resized = cv2.resize(best_mask, (x2 - x1, y2 - y1), interpolation=cv2.INTER_NEAREST)
                     full_mask = np.zeros((img_height, img_width), dtype=np.uint8)
                     full_mask[y1:y2, x1:x2][mask_resized > 0] = 1
-
-                    # Convert mask to polygon
                     polygon = mask_to_polygon(full_mask)
                     if polygon:
-                        # Get color for visualization (lighter version)
                         base_color = class_colors.get(category, (255, 255, 255))
-                        color = tuple(min(255, int(c * 1.5)) for c in base_color)  # Make color lighter
-                        
-                        # Create overlay for the mask
+                        color = tuple(min(255, int(c * 1.5)) for c in base_color)  
                         overlay = img.copy()
                         overlay[full_mask > 0] = color
-                        # Blend the overlay with the original image
                         cv2.addWeighted(overlay, 0.5, img, 0.5, 0, img)
-
-                        # Calculate center point for caption
                         points = np.array([[int(p[0]), int(p[1])] for p in polygon if p[2] == "L"], dtype=np.int32)
                         center_x = int(np.mean(points[:, 0]))
                         center_y = int(np.mean(points[:, 1]))
-
-                        # Add caption
                         font = cv2.FONT_HERSHEY_SIMPLEX
                         font_scale = 0.6
                         thickness = 2
                         (text_width, text_height), baseline = cv2.getTextSize(category, font, font_scale, thickness)
                         
-                        # Draw background rectangle for text
                         cv2.rectangle(img, 
                                     (center_x - text_width//2 - 5, center_y - text_height - 5),
                                     (center_x + text_width//2 + 5, center_y + 5),
                                     (0, 0, 0), -1)
                         
-                        # Draw text
                         cv2.putText(img, category,
                                   (center_x - text_width//2, center_y),
                                   font, font_scale, (255, 255, 255), thickness)
 
-                        # Create object data
                         obj = {
                             "category": category,
                             "id": obj_id,
@@ -166,18 +143,15 @@ def process_frames(input_dir, output_dir, yolo_json_path):
                         }
                         objects.append(obj)
 
-        # Save processed frame
         out_frame_path = os.path.join(output_dir, frame_file)
         cv2.imwrite(out_frame_path, img)
 
-        # Add frame data to aggregated output
         frame_data = {
-            "timestamp": yolo_data["frames"][frame_idx]["timestamp"],  # Use timestamp from YOLO data
+            "timestamp": yolo_data["frames"][frame_idx]["timestamp"],  
             "objects": objects
         }
         aggregated_data["frames"].append(frame_data)
 
-    # Save SEG JSON in output_dir directly
     temp_json_path = os.path.join(output_dir, 'seg_output.json')
     with open(temp_json_path, "w") as f:
         json.dump(aggregated_data, f, indent=4)
