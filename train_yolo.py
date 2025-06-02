@@ -20,7 +20,7 @@ def log_gpu_memory():
 
 if __name__ == '__main__':
     log_system_info()
-    model = YOLO("yolo8x.pt")
+    model = YOLO("yolov8x.pt")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.model.to(device)
     print("Starting training...")

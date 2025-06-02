@@ -19,11 +19,28 @@ os.makedirs(OUTPUTS_VID_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 # Create model-specific output directories
-for model in ['yolo', 'seg', 'midas']:
+for model in ['yolo', 'seg', 'midas', 'deepsort']:
     os.makedirs(os.path.join(OUTPUTS_VID_DIR, model, 'vid'), exist_ok=True)
     os.makedirs(os.path.join(OUTPUTS_VID_DIR, model, 'json'), exist_ok=True)
 
 # --- HELPER FUNCTIONS ---
+
+def copy_model_json_to_output(model, src_dir, dst_dir, vidname):
+    """Copy only the main output JSON of the model from src_dir to dst_dir, renaming it to vidname.json."""
+    import shutil, os
+    os.makedirs(dst_dir, exist_ok=True)
+    model_json_map = {
+        'yolo': 'yolo_output.json',
+        'seg': 'seg_output.json',
+        'midas': 'midas_output.json',
+        'deepsort': 'deepsort_output.json',
+    }
+    main_json = model_json_map.get(model)
+    if main_json:
+        src_json = os.path.join(src_dir, main_json)
+        dst_json = os.path.join(dst_dir, f"{vidname}.json")
+        if os.path.exists(src_json):
+            shutil.copy2(src_json, dst_json)
 
 def extract_frames(video_path, output_dir):
     """Extract frames from video to output_dir."""
@@ -134,6 +151,10 @@ def process_video(video_path):
         'midas': {
             'video': os.path.join(OUTPUTS_VID_DIR, 'midas', 'vid', f"{video_name}.mp4"),
             'json': os.path.join(OUTPUTS_VID_DIR, 'midas', 'json', f"{video_name}.json")
+        },
+        'deepsort': {
+            'video': os.path.join(OUTPUTS_VID_DIR, 'deepsort', 'vid', f"{video_name}.mp4"),
+            'json': os.path.join(OUTPUTS_VID_DIR, 'deepsort', 'json', f"{video_name}.json")
         }
     }
 
@@ -146,45 +167,61 @@ def process_video(video_path):
         for f in os.listdir(output_dir):
             fp = os.path.join(output_dir, f)
             if os.path.isfile(fp):
-                if os.path.basename(fp) not in ['yolo_output.json', 'seg_output.json', 'midas_output.json']:
+                if os.path.basename(fp) not in ['yolo_output.json', 'seg_output.json', 'midas_output.json', 'deepsort_output.json', 'frame_pred.jpg', 'frame_pred.json']:
                     os.remove(fp)
 
     # Step 2: Run YOLO
     clear_output_dir()
+    print("\n========= Starting YOLO Detection ==========\n")
     if not run_model_script("script-video-pipeline/video_pipe_yolo.py", input_dir, output_dir, str(fps)):
         return False
     if not reconstruct_video(output_dir, output_paths['yolo']['video'], fps):
         return False
+    copy_model_json_to_output('yolo', output_dir, os.path.join(OUTPUTS_VID_DIR, 'yolo', 'json'), video_name)
 
     yolo_json = os.path.join(output_dir, "yolo_output.json")
     clear_output_dir()
-    print("\n========= Finished YOLO ==========\n")
+    print("\n========= Finished YOLO Detection ==========\n")
     # Step 3: Run Mask2Former using YOLO JSON
+    print("\n========= Starting Segmentation ==========\n")
     if not run_model_script("script-video-pipeline/video_pipe_seg.py", input_dir, output_dir, yolo_json):
         return False
     if not reconstruct_video(output_dir, output_paths['seg']['video'], fps):
         return False
+    copy_model_json_to_output('seg', output_dir, os.path.join(OUTPUTS_VID_DIR, 'seg', 'json'), video_name)
 
     seg_json = os.path.join(output_dir, "seg_output.json")
     clear_output_dir()
     print("\n========= Finished Segmentation ==========\n")
     # Step 4: Run MiDaS using segmentation JSON
+    print("\n========= Starting Midas Depth Estimation ==========\n")
     seg_json = os.path.join(output_dir, "seg_output.json")
     if not run_model_script("script-video-pipeline/video_pipe_midas.py", input_dir, output_dir, seg_json):
         return False
     if not reconstruct_video(output_dir, output_paths['midas']['video'], fps):
         return False
+    copy_model_json_to_output('midas', output_dir, os.path.join(OUTPUTS_VID_DIR, 'midas', 'json'), video_name)
 
     clear_output_dir()
-    print("\n========= Finished Midas ==========\n")
+    print("\n========= Finished Midas Depth Estimation ==========\n")
     # Step 5: Run DeepSORT tracking
     midas_json = os.path.join(output_dir, "midas_output.json")
+    print("\n========= Starting DeepSORT Tracking ==========\n")
     if not run_model_script("script-video-pipeline/video_pipe_deepsort.py", input_dir, output_dir, midas_json):
         return False
     # Reconstruct DeepSORT video from per-frame images
     if not reconstruct_video(output_dir, output_paths['deepsort']['video'], fps):
         return False
+    copy_model_json_to_output('deepsort', output_dir, os.path.join(OUTPUTS_VID_DIR, 'deepsort', 'json'), video_name)
     # Copy prediction frame and json to deepsort output folders
+    last_img_src = os.path.join(output_dir, "last_frame.jpg")
+    last_img_dst = os.path.join(os.path.dirname(output_paths['deepsort']['video']), f"{video_name}_last.jpg")
+    if os.path.exists(last_img_src):
+        shutil.copy2(last_img_src, last_img_dst)
+    last_json_src = os.path.join(output_dir, "last_frame.json")
+    last_json_dst = os.path.join(os.path.dirname(output_paths['deepsort']['json']), f"{video_name}_last.json")
+    if os.path.exists(last_json_src):
+        shutil.copy2(last_json_src, last_json_dst)
     pred_img_src = os.path.join(output_dir, "frame_pred.jpg")
     pred_img_dst = os.path.join(os.path.dirname(output_paths['deepsort']['video']), f"{video_name}_pred.jpg")
     if os.path.exists(pred_img_src):
@@ -193,7 +230,7 @@ def process_video(video_path):
     pred_json_dst = os.path.join(os.path.dirname(output_paths['deepsort']['json']), f"{video_name}_pred.json")
     if os.path.exists(pred_json_src):
         shutil.copy2(pred_json_src, pred_json_dst)
-    print("\n========= Finished DeepSORT ==========\n")
+    print("\n========= Finished DeepSORT Tracking =========\n")
     # Step 6: Clean up temp directory
     shutil.rmtree(temp_dir)
     print(f"Temporary directory {temp_dir} cleared.")

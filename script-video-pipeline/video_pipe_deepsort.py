@@ -36,10 +36,7 @@ def process_frames(input_dir, output_dir, midas_json_path):
     last_obj_info = {}
     track_histories = {}
     # Prepare output dirs
-    img_dir = os.path.join(output_dir, 'images')
-    json_dir = os.path.join(output_dir, 'jsons')
-    os.makedirs(img_dir, exist_ok=True)
-    os.makedirs(json_dir, exist_ok=True)
+
     # Get video name
     frame_files = sorted([f for f in os.listdir(input_dir) if f.startswith('frame_') and f.endswith('.jpg')])
     aggregated_frames = []
@@ -63,7 +60,7 @@ def process_frames(input_dir, output_dir, midas_json_path):
                     track_histories[obj['track_id']] = {
                         'centroids': [centroid],
                         'timestamps': [frame['timestamp']],
-                        'depths': [obj.get('depth', 0)],
+                        'depths': [obj['depth']['mean'] if 'depth' in obj and isinstance(obj['depth'], dict) and 'mean' in obj['depth'] else 0],
                         'speed_xs': [0],
                         'speed_ys': [0],
                         'speeds': [0]
@@ -88,7 +85,7 @@ def process_frames(input_dir, output_dir, midas_json_path):
                         speed_x, speed_y, speed = 0, 0, 0
                     track_histories[obj['track_id']]['centroids'].append(centroid)
                     track_histories[obj['track_id']]['timestamps'].append(frame['timestamp'])
-                    track_histories[obj['track_id']]['depths'].append(obj.get('depth', 0))
+                    track_histories[obj['track_id']]['depths'].append(obj['depth']['mean'] if 'depth' in obj and isinstance(obj['depth'], dict) and 'mean' in obj['depth'] else 0)
                     track_histories[obj['track_id']]['speed_xs'].append(speed_x)
                     track_histories[obj['track_id']]['speed_ys'].append(speed_y)
                     track_histories[obj['track_id']]['speeds'].append(speed)
@@ -114,7 +111,7 @@ def process_frames(input_dir, output_dir, midas_json_path):
                 bbox = poly2d_to_bbox(obj['poly2d'])
                 color = (0, 255, 0)
                 img = draw_bbox_and_id(img, bbox, obj['track_id'], obj['category'], color)
-        cv2.imwrite(os.path.join(img_dir, f"frame_{frame_idx:04d}.jpg"), img)
+        cv2.imwrite(os.path.join(output_dir, f"frame_{frame_idx:04d}.jpg"), img)
         # Aggregate for output JSON
         aggregated_frames.append({
             'timestamp': frame['timestamp'],
@@ -147,21 +144,98 @@ def process_frames(input_dir, output_dir, midas_json_path):
         }
         pred_objects.append(pred_obj)
 
-    # Save prediction frame as image
-    pred_img = cv2.imread(os.path.join(input_dir, frame_files[-1]))
-    for obj in pred_objects:
-        bbox = poly2d_to_bbox(obj['poly2d'])
-        color = (0, 0, 255)
-        pred_img = draw_bbox_and_id(pred_img, bbox, obj['track_id'], obj['category'], color)
-    pred_img_path = os.path.join(output_dir, "frame_pred.jpg")
-    cv2.imwrite(pred_img_path, pred_img)
-    # Save prediction JSON
-    pred_json_path = os.path.join(output_dir, "frame_pred.json")
-    with open(pred_json_path, 'w') as f:
+    # Save last frame (before prediction) as image
+    last_img = cv2.imread(os.path.join(input_dir, frame_files[-1]))
+    # Find objects in last frame
+    last_frame_objects = aggregated_frames[-1]['objects'] if aggregated_frames and 'objects' in aggregated_frames[-1] else []
+    for obj in last_frame_objects:
+        if 'track_id' in obj:
+            bbox = poly2d_to_bbox(obj['poly2d'])
+            color = (0, 255, 0)
+            last_img = draw_bbox_and_id(last_img, bbox, obj['track_id'], obj['category'], color)
+    last_img_path = os.path.join(output_dir, "last_frame.jpg")
+    cv2.imwrite(last_img_path, last_img)
+    # Save last frame JSON
+    last_json_path = os.path.join(output_dir, "last_frame.json")
+    with open(last_json_path, 'w') as f:
         json.dump({
-            'timestamp': 'prediction',
-            'objects': pred_objects
+            'timestamp': frames[-1]['timestamp'] if frames else None,
+            'objects': last_frame_objects
         }, f, indent=4)
+
+    # Predict 50 frames ahead, update poly2d, and draw on blank images
+    num_pred_frames = 50
+    # Get image shape from last frame
+    last_img = cv2.imread(os.path.join(input_dir, frame_files[-1]))
+    img_shape = last_img.shape if last_img is not None else (720, 1280, 3)  # fallback shape
+    H, W = img_shape[0], img_shape[1]
+    curr_pred_objects = pred_objects
+    # For depth extrapolation, maintain a per-object depth history
+    obj_depth_histories = {}
+    for obj in curr_pred_objects:
+        tid = obj['track_id']
+        d = obj.get('depth', 0)
+        if isinstance(d, dict):
+            d = d.get('mean', 0)
+        obj_depth_histories[tid] = [d]
+    for pred_idx in range(1, num_pred_frames + 1):
+        next_pred_objects = []
+        for obj in curr_pred_objects:
+            speed_x = obj.get('speed_x', 0)
+            speed_y = obj.get('speed_y', 0)
+            # Shift poly2d
+            new_poly2d = [[float(p[0]) + speed_x, float(p[1]) + speed_y, p[2]] for p in obj['poly2d']]
+            # Check if all points are out of frame
+            out_of_frame = all((p[0] < 0 or p[0] >= W or p[1] < 0 or p[1] >= H) for p in new_poly2d)
+            # Depth extrapolation
+            tid = obj['track_id']
+            d_hist = obj_depth_histories.get(tid, [0])
+            last_depth = d_hist[-1]
+            if len(d_hist) >= 2:
+                prev_depth = d_hist[-2]
+                new_depth = last_depth + (last_depth - prev_depth)
+            else:
+                new_depth = last_depth
+            # If out of frame, set speeds to 0
+            if out_of_frame:
+                speed_x = 0
+                speed_y = 0
+                obj_speed = 0
+            else:
+                obj_speed = (speed_x ** 2 + speed_y ** 2) ** 0.5
+            # Only keep objects that are not completely out of frame
+            if not out_of_frame:
+                next_pred_obj = {
+                    'track_id': obj['track_id'],
+                    'category': obj['category'],
+                    'attributes': obj.get('attributes', {}),
+                    'confidence': obj.get('confidence', 1.0),
+                    'poly2d': new_poly2d,
+                    'depth': new_depth,
+                    'speed_x': speed_x,
+                    'speed_y': speed_y,
+                    'speed': obj_speed
+                }
+                next_pred_objects.append(next_pred_obj)
+                # Update depth history for next step
+                obj_depth_histories[tid].append(new_depth)
+        # Draw on blank image
+        blank_img = np.zeros(img_shape, dtype=np.uint8)
+        for obj in next_pred_objects:
+            bbox = poly2d_to_bbox(obj['poly2d'])
+            color = (0, 0, 255)
+            blank_img = draw_bbox_and_id(blank_img, bbox, obj['track_id'], obj['category'], color)
+        pred_img_path = os.path.join(output_dir, f"frame_pred_{pred_idx:02d}.jpg")
+        cv2.imwrite(pred_img_path, blank_img)
+        # Save prediction JSON for this frame
+        pred_json_path = os.path.join(output_dir, f"frame_pred_{pred_idx:02d}.json")
+        with open(pred_json_path, 'w') as f:
+            json.dump({
+                'timestamp': f'prediction_{pred_idx}',
+                'objects': next_pred_objects
+            }, f, indent=4)
+        # Prepare for next iteration
+        curr_pred_objects = next_pred_objects
 
     # Save aggregated output JSON
     output_json_path = os.path.join(output_dir, "deepsort_output.json")
@@ -171,14 +245,6 @@ def process_frames(input_dir, output_dir, midas_json_path):
             'frames': aggregated_frames
         }, f, indent=4)
 
-    # Copy to outputs_vid/deepsort/json at project root
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    main_json_dir = os.path.join(project_root, 'outputs_vid', 'deepsort', 'json')
-    os.makedirs(main_json_dir, exist_ok=True)
-    video_name = os.path.basename(os.path.normpath(input_dir))
-    main_json_path = os.path.join(main_json_dir, f"{video_name}.json")
-    import shutil
-    shutil.copy2(output_json_path, main_json_path)
 
 
 if __name__ == "__main__":

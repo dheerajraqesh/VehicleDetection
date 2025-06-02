@@ -6,7 +6,6 @@ from transformers import Mask2FormerImageProcessor, Mask2FormerForUniversalSegme
 from PIL import Image
 import numpy as np
 
-# --- CONFIG ---
 base_path = r"E:\Vehicle Occlusion"
 colored_dir = os.path.join(base_path, "outputs/seg/img")
 json_dir = os.path.join(base_path, "outputs/seg/json")

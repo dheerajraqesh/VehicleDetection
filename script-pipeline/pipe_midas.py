@@ -39,8 +39,6 @@ def create_depth_visualization(img, objects_with_depth, image_name):
     depths = [obj['depth'] for obj in objects_with_depth if 'depth' in obj]
     if not depths:
         return
-    
-    # Convert depths to inverse scale for color mapping (100/depth)
     inverse_depths = [100/d for d in depths]
     min_depth = min(inverse_depths)
     max_depth = max(inverse_depths)
@@ -54,7 +52,7 @@ def create_depth_visualization(img, objects_with_depth, image_name):
         if 'depth' not in obj:
             continue
             
-        depth = 100/obj['depth']  # Convert to inverse scale for coloring
+        depth = 100/obj['depth']  
         category = obj.get('category', 'unknown')
         
         if category == 'background':
@@ -224,7 +222,6 @@ def process_image(image_path, json_path):
                     
                     processed_mask = cv2.bitwise_or(processed_mask, mask)
 
-    # Compute depth for unprocessed areas
     unprocessed_mask = (1 - processed_mask).astype(bool)
     if unprocessed_mask.any():
         background_depth = compute_masked_depth(depth_map, unprocessed_mask)

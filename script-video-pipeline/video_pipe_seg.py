@@ -182,15 +182,6 @@ def process_frames(input_dir, output_dir, yolo_json_path):
     with open(temp_json_path, "w") as f:
         json.dump(aggregated_data, f, indent=4)
 
-    # Copy to outputs_vid/seg/json with new name
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    out_json_dir = os.path.join(project_root, 'outputs_vid', 'seg', 'json')
-    os.makedirs(out_json_dir, exist_ok=True)
-    video_name = os.path.basename(os.path.normpath(input_dir))
-    out_json_name = f"{video_name}.json"
-    out_json_path = os.path.join(out_json_dir, out_json_name)
-    shutil.copy(temp_json_path, out_json_path)
-    print(f"Saved Mask2Former JSON to: {out_json_path}")
     return True
 
 if __name__ == "__main__":
