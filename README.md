@@ -6,4 +6,5 @@ The `scripts-video-pipeline` folder contains scripts for running the three main 
 - Runs each model on the frames
 - Aggregates results into a single output video and a single JSON file (using BDD format with frames notation)
 
-This enables batch processing and tracking of predictions across video frames. (Kalman filtering and tracking will be added later.)
+This enables batch processing and tracking of predictions across video frames. 
+Advanced Occlusion Dectection and Mitigation will be added later
